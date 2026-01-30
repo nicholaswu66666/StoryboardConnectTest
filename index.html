@@ -662,49 +662,87 @@
 
         // --- Image Preload / Decode Helpers ---
         // Keep a small in-memory cache of Image objects to make next/prev flips instant.
-        const __imgCache = new Map(); // url -> Image
-
-        function __getCachedImage(url) {
+        const __imgCache = new Map(); // url -> { im: Image, ready: boolean, promise: Promise<void> }
+        let __swapToken = 0;
+        
+        function __getCachedEntry(url) {
             if (!url) return null;
             if (__imgCache.has(url)) return __imgCache.get(url);
+        
             const im = new Image();
             im.decoding = "async";
             im.loading = "eager";
+        
+            const entry = { im, ready: false, promise: null };
+        
+            entry.promise = new Promise((resolve) => {
+                im.onload = () => { entry.ready = true; resolve(); };
+                im.onerror = () => resolve(); // don't block on errors
+            });
+        
             im.src = url;
-            __imgCache.set(url, im);
-            return im;
+        
+            // If browser already has it (cache hit), mark as ready.
+            if (im.complete) entry.ready = true;
+        
+            __imgCache.set(url, entry);
+            return entry;
         }
-
+        
         function __preload(url) {
             if (!url) return;
-            __getCachedImage(url);
+            __getCachedEntry(url);
         }
-
+        
+        async function __ensureReady(url) {
+            const entry = __getCachedEntry(url);
+            if (!entry) return null;
+            if (entry.ready) return entry;
+        
+            // Try to decode (may resolve after load); ignore failures.
+            try { if (entry.im.decode) await entry.im.decode(); } catch (e) { /* ignore */ }
+            await entry.promise;
+        
+            return entry;
+        }
+        
+        // Smart swap: only show loading if not ready within 150ms (prevents flicker on cache hits)
         async function __setLightboxImage(imgEl, loadingEl, url) {
             if (!imgEl || !url) return;
-
-            if (loadingEl) loadingEl.classList.remove('hidden');
-
-            const im = __getCachedImage(url);
-
-            // Try to decode before swapping src to avoid a visible stall/flash.
-            try { await im.decode(); } catch (e) { /* ignore */ }
-
-            imgEl.src = url;
-
-            // Hide loading when browser has a frame to paint
-            if (loadingEl) {
-                // If the image is already complete, hide immediately; otherwise hide on load.
-                if (im.complete) {
-                    loadingEl.classList.add('hidden');
-                } else {
-                    imgEl.onload = () => loadingEl.classList.add('hidden');
-                    imgEl.onerror = () => loadingEl.classList.add('hidden');
-                }
+        
+            const myToken = ++__swapToken;
+        
+            const cached = __imgCache.get(url);
+            if (cached && cached.ready) {
+                if (myToken !== __swapToken) return;
+                if (loadingEl) loadingEl.classList.add('hidden');
+                imgEl.src = url;
+                return;
             }
+        
+            let showLoading = true;
+            let timer = null;
+        
+            if (loadingEl) {
+                loadingEl.classList.add('hidden'); // start hidden
+                timer = setTimeout(() => {
+                    if (!showLoading) return;
+                    if (myToken !== __swapToken) return;
+                    loadingEl.classList.remove('hidden');
+                }, 150);
+            }
+        
+            await __ensureReady(url);
+        
+            showLoading = false;
+            if (timer) clearTimeout(timer);
+        
+            if (myToken !== __swapToken) return;
+        
+            imgEl.src = url;
+            if (loadingEl) loadingEl.classList.add('hidden');
         }
-
-        function buildPortfolioImageList(portfolioId) {
+function buildPortfolioImageList(portfolioId) {
             const cfg = portfolioConfig[portfolioId];
             if (!cfg) return [];
             // We pick the first candidate folder by default.
