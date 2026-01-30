@@ -1,0 +1,51 @@
+name: Optimize WebP Images
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "images/**"
+      - "scripts/optimize-webp.mjs"
+      - ".github/workflows/optimize-images.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install sharp
+        run: npm install sharp@^0.33.0
+
+      - name: Optimize images
+        env:
+          MAX_WIDTH: "1920"
+          WEBP_QUALITY: "80"
+        run: node scripts/optimize-webp.mjs
+
+      - name: Commit & push changes (if any)
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add images
+          git commit -m "chore: auto-optimize webp images"
+          git push
