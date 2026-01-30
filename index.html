@@ -147,7 +147,7 @@
                         <div class="w-full aspect-video bg-gray-800 rounded-xl overflow-hidden relative group border border-gray-700">
                             <img src="images/Soulstealers.jpg" class="w-full h-full object-cover opacity-50 group-hover:opacity-70 transition duration-500">
                             <div class="absolute inset-0 flex items-center justify-center">
-                                <button class="px-6 py-3 bg-accent hover:bg-accent-dark text-white font-bold rounded shadow-lg transition transform hover:scale-105">
+                                <button class="px-6 py-3 bg-accent hover:bg-accent-dark text-white font-bold rounded shadow-lg transition transform hover:scale-105" onclick="openDeckViewer()">
                                     <i class="fas fa-eye mr-2"></i> View Pitch Deck
                                 </button>
                             </div>
@@ -330,8 +330,15 @@
                     </div>
 
                     <div class="bg-black/30 border border-gray-700 rounded-2xl p-2 md:p-3 shadow-2xl backdrop-blur-md">
-                        <img id="lightbox-image" src="" alt="Portfolio Image" class="lightbox-img rounded-xl object-contain select-none" />
-                    </div>
+                        <div class="relative">
+                            <div id="lightbox-loading" class="hidden absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                                <div class="text-white/90 text-sm font-semibold tracking-wide flex items-center gap-3">
+                                    <i class="fas fa-circle-notch fa-spin"></i><span>Loading...</span>
+                                </div>
+                            </div>
+                            <img id="lightbox-image" src="" alt="Portfolio Image" class="lightbox-img rounded-xl object-contain select-none" />
+                    
+                        </div></div>
 
                     <div class="flex md:hidden gap-3">
                         <button onclick="portfolioPrev()" class="bg-black/40 hover:bg-accent text-white px-4 py-2 rounded-full border border-gray-700 transition">
@@ -347,6 +354,53 @@
                     <i class="fas fa-chevron-right"></i>
                 </button>
             </div>
+
+        <!-- Visual Deck Lightbox Viewer -->
+        <div id="deck-lightbox" class="hidden fixed inset-0 z-[60] lightbox-backdrop">
+            <div class="absolute inset-0" onclick="closeDeckViewer()"></div>
+
+            <div class="relative h-full w-full flex items-center justify-center p-4">
+                <button id="deck-close" onclick="closeDeckViewer()" class="absolute top-6 right-6 bg-black/40 hover:bg-accent text-white w-10 h-10 rounded-full flex items-center justify-center transition backdrop-blur-md border border-gray-600">
+                    <i class="fas fa-times"></i>
+                </button>
+
+                <button id="deck-prev" onclick="deckPrev()" class="hidden md:flex absolute left-6 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-accent text-white w-12 h-12 rounded-full items-center justify-center transition backdrop-blur-md border border-gray-600">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+
+                <div class="relative z-10 flex flex-col items-center gap-4">
+                    <div class="text-xs md:text-sm text-gray-300 bg-black/40 px-3 py-2 rounded-full border border-gray-700 backdrop-blur-md">
+                        <span id="deck-title" class="font-semibold text-white">Visual Deck</span>
+                        <span class="mx-2 text-gray-500">•</span>
+                        <span id="deck-counter" class="text-gray-300">1 / 1</span>
+                    </div>
+
+                    <div class="bg-black/30 border border-gray-700 rounded-2xl p-2 md:p-3 shadow-2xl backdrop-blur-md">
+                        <div class="relative">
+                            <div id="deck-loading" class="hidden absolute inset-0 flex items-center justify-center rounded-xl bg-black/40">
+                                <div class="text-white/90 text-sm font-semibold tracking-wide flex items-center gap-3">
+                                    <i class="fas fa-circle-notch fa-spin"></i><span>Loading...</span>
+                                </div>
+                            </div>
+                            <img id="deck-image" src="" alt="Deck Image" class="lightbox-img rounded-xl object-contain select-none" />
+                        </div>
+                    </div>
+
+                    <div class="flex md:hidden gap-3">
+                        <button onclick="deckPrev()" class="bg-black/40 hover:bg-accent text-white px-4 py-2 rounded-full border border-gray-700 transition">
+                            <i class="fas fa-chevron-left mr-2"></i>Prev
+                        </button>
+                        <button onclick="deckNext()" class="bg-black/40 hover:bg-accent text-white px-4 py-2 rounded-full border border-gray-700 transition">
+                            Next<i class="fas fa-chevron-right ml-2"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <button id="deck-next" onclick="deckNext()" class="hidden md:flex absolute right-6 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-accent text-white w-12 h-12 rounded-full items-center justify-center transition backdrop-blur-md border border-gray-600">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
         </div>
 
 
@@ -597,7 +651,7 @@
 
         // --- Portfolio Viewer (Lightbox) ---
         // NOTE: Because this is a static HTML demo, we can't auto-scan folders in the browser.
-        // We generate file paths based on your naming rule: "a (1).webp", "a (2).webp", ...
+        // We generate file paths based on your naming rule: "a (1).png", "a (2).png", ...
         // Update the counts below if you add/remove images.
         const portfolioConfig = {
             1: { title: "Way of the Shadow", folderCandidates: ["images/Portfolio_1", "images/Portfolio1"], count: 24 },
@@ -605,6 +659,50 @@
         };
 
         let activePortfolio = null; // {id, images, index, title}
+
+        // --- Image Preload / Decode Helpers ---
+        // Keep a small in-memory cache of Image objects to make next/prev flips instant.
+        const __imgCache = new Map(); // url -> Image
+
+        function __getCachedImage(url) {
+            if (!url) return null;
+            if (__imgCache.has(url)) return __imgCache.get(url);
+            const im = new Image();
+            im.decoding = "async";
+            im.loading = "eager";
+            im.src = url;
+            __imgCache.set(url, im);
+            return im;
+        }
+
+        function __preload(url) {
+            if (!url) return;
+            __getCachedImage(url);
+        }
+
+        async function __setLightboxImage(imgEl, loadingEl, url) {
+            if (!imgEl || !url) return;
+
+            if (loadingEl) loadingEl.classList.remove('hidden');
+
+            const im = __getCachedImage(url);
+
+            // Try to decode before swapping src to avoid a visible stall/flash.
+            try { await im.decode(); } catch (e) { /* ignore */ }
+
+            imgEl.src = url;
+
+            // Hide loading when browser has a frame to paint
+            if (loadingEl) {
+                // If the image is already complete, hide immediately; otherwise hide on load.
+                if (im.complete) {
+                    loadingEl.classList.add('hidden');
+                } else {
+                    imgEl.onload = () => loadingEl.classList.add('hidden');
+                    imgEl.onerror = () => loadingEl.classList.add('hidden');
+                }
+            }
+        }
 
         function buildPortfolioImageList(portfolioId) {
             const cfg = portfolioConfig[portfolioId];
@@ -614,7 +712,7 @@
             const folder = cfg.folderCandidates[0];
             const images = [];
             for (let i = 1; i <= cfg.count; i++) {
-                images.push(`${folder}/a (${i}).webp`);
+                images.push(`${folder}/a (${i}).png`);
             }
             return images;
         }
@@ -651,13 +749,27 @@
             activePortfolio = null;
         }
 
-        function renderPortfolioLightbox() {
+        async function renderPortfolioLightbox() {
             if (!activePortfolio) return;
             const img = document.getElementById('lightbox-image');
             const counter = document.getElementById('lightbox-counter');
+            const loading = document.getElementById('lightbox-loading');
 
-            img.src = activePortfolio.images[activePortfolio.index];
+            const url = activePortfolio.images[activePortfolio.index];
             counter.textContent = `${activePortfolio.index + 1} / ${activePortfolio.images.length}`;
+
+            await __setLightboxImage(img, loading, url);
+
+            // Preload neighbors: 2 ahead + 2 behind (wrap-around safe)
+            const len = activePortfolio.images.length;
+            const i = activePortfolio.index;
+            const urls = [
+                activePortfolio.images[(i + 1) % len],
+                activePortfolio.images[(i + 2) % len],
+                activePortfolio.images[(i - 1 + len) % len],
+                activePortfolio.images[(i - 2 + len) % len],
+            ];
+            urls.forEach(__preload);
         }
 
         function portfolioNext() {
@@ -672,16 +784,109 @@
             renderPortfolioLightbox();
         }
 
-        // Keyboard navigation: Esc closes, ←/→ flips
-        document.addEventListener('keydown', (e) => {
-            const lb = document.getElementById('portfolio-lightbox');
-            const isOpen = lb && !lb.classList.contains('hidden');
-            if (!isOpen) return;
+        
+        // --- Visual Deck Viewer (Lightbox) ---
+        // Files: images/VisualDeck/a (1).webp ... a (N).webp
+        const deckConfig = { title: "Visual Deck", folder: "images/VisualDeck", count: 8 };
 
-            if (e.key === 'Escape') closePortfolioViewer();
-            if (e.key === 'ArrowRight') portfolioNext();
-            if (e.key === 'ArrowLeft') portfolioPrev();
+        let activeDeck = null; // {images, index, title}
+
+        function buildDeckImageList() {
+            const images = [];
+            for (let i = 1; i <= deckConfig.count; i++) {
+                images.push(`${deckConfig.folder}/a (${i}).webp`);
+            }
+            return images;
+        }
+
+        function openDeckViewer(startIndex = 0) {
+            const images = buildDeckImageList();
+            if (!images.length) return;
+
+            activeDeck = {
+                title: deckConfig.title || "Visual Deck",
+                images,
+                index: Math.max(0, Math.min(startIndex, images.length - 1))
+            };
+
+            document.getElementById('deck-title').textContent = activeDeck.title;
+            document.getElementById('deck-lightbox').classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+
+            const showNav = images.length > 1;
+            document.getElementById('deck-prev').style.display = showNav ? 'flex' : 'none';
+            document.getElementById('deck-next').style.display = showNav ? 'flex' : 'none';
+
+            renderDeckLightbox();
+        }
+
+        function closeDeckViewer() {
+            document.getElementById('deck-lightbox').classList.add('hidden');
+            document.body.style.overflow = 'auto';
+            activeDeck = null;
+        }
+
+        async function renderDeckLightbox() {
+            if (!activeDeck) return;
+
+            const img = document.getElementById('deck-image');
+            const counter = document.getElementById('deck-counter');
+            const loading = document.getElementById('deck-loading');
+
+            const url = activeDeck.images[activeDeck.index];
+            counter.textContent = `${activeDeck.index + 1} / ${activeDeck.images.length}`;
+
+            await __setLightboxImage(img, loading, url);
+
+            // Preload neighbors: 1 ahead + 1 behind
+            const len = activeDeck.images.length;
+            const i = activeDeck.index;
+            __preload(activeDeck.images[(i + 1) % len]);
+            __preload(activeDeck.images[(i - 1 + len) % len]);
+        }
+
+        function deckNext() {
+            if (!activeDeck) return;
+            activeDeck.index = (activeDeck.index + 1) % activeDeck.images.length;
+            renderDeckLightbox();
+        }
+
+        function deckPrev() {
+            if (!activeDeck) return;
+            activeDeck.index = (activeDeck.index - 1 + activeDeck.images.length) % activeDeck.images.length;
+            renderDeckLightbox();
+        }
+
+// Keyboard navigation: Esc closes, ←/→ flips
+        document.addEventListener('keydown', (e) => {
+            // Priority: if Deck is open, control Deck; otherwise control Portfolio.
+            const deckLb = document.getElementById('deck-lightbox');
+            const deckOpen = deckLb && !deckLb.classList.contains('hidden');
+
+            const portLb = document.getElementById('portfolio-lightbox');
+            const portOpen = portLb && !portLb.classList.contains('hidden');
+
+            if (!deckOpen && !portOpen) return;
+
+            if (e.key === 'Escape') {
+                if (deckOpen) closeDeckViewer();
+                if (portOpen) closePortfolioViewer();
+                return;
+            }
+
+            if (e.key === 'ArrowRight') {
+                if (deckOpen) deckNext();
+                else if (portOpen) portfolioNext();
+                return;
+            }
+
+            if (e.key === 'ArrowLeft') {
+                if (deckOpen) deckPrev();
+                else if (portOpen) portfolioPrev();
+                return;
+            }
         });
+
 
         // --- Modals ---
 
@@ -709,59 +914,5 @@
             location.reload();
         }
     </script>
-
-<!-- Portfolio Lightbox -->
-<div id="portfolio-lightbox" class="hidden fixed inset-0 z-[999] bg-black/90 flex items-center justify-center">
-  <button id="lb-close" class="absolute top-6 right-6 text-white text-2xl">&times;</button>
-  <button id="lb-prev" class="absolute left-6 text-white text-3xl">&#10094;</button>
-  <img id="lb-image" src="" class="max-h-[90vh] max-w-[90vw] object-contain"/>
-  <button id="lb-next" class="absolute right-6 text-white text-3xl">&#10095;</button>
-</div>
-
 </body>
-
-<script>
-/* ===== Portfolio Lightbox Logic ===== */
-const portfolios = {
-  project1: Array.from({length: 24}, (_,i)=>`images/Portfolio_1/a (${i+1}).webp`),
-  project2: Array.from({length: 34}, (_,i)=>`images/Portfolio_2/a (${i+1}).webp`),
-};
-let currentProject = null;
-let currentIndex = 0;
-
-function openPortfolio(projectKey, index=0){
-  currentProject = projectKey;
-  currentIndex = index;
-  document.getElementById('portfolio-lightbox').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-  renderLB();
-}
-
-function closeLB(){
-  document.getElementById('portfolio-lightbox').classList.add('hidden');
-  document.body.style.overflow = 'auto';
-}
-
-function renderLB(){
-  document.getElementById('lb-image').src = portfolios[currentProject][currentIndex];
-}
-
-document.getElementById('lb-close').onclick = closeLB;
-document.getElementById('lb-prev').onclick = ()=>{
-  currentIndex = (currentIndex-1+portfolios[currentProject].length)%portfolios[currentProject].length;
-  renderLB();
-};
-document.getElementById('lb-next').onclick = ()=>{
-  currentIndex = (currentIndex+1)%portfolios[currentProject].length;
-  renderLB();
-};
-
-document.addEventListener('keydown', e=>{
-  if(document.getElementById('portfolio-lightbox').classList.contains('hidden')) return;
-  if(e.key==='ArrowLeft') document.getElementById('lb-prev').click();
-  if(e.key==='ArrowRight') document.getElementById('lb-next').click();
-  if(e.key==='Escape') closeLB();
-});
-</script>
-
 </html>
